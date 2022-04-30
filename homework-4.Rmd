@@ -1,0 +1,267 @@
+---
+title: "Homework 4"
+author: "PSTAT 131/231"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+## Resampling
+
+Load the data from `data/titanic.csv` into *R* and familiarize yourself with the variables it contains using the codebook (`data/titanic_codebook.txt`).
+
+Notice that `survived` and `pclass` should be changed to factors. When changing `survived` to a factor, you may want to reorder the factor so that *"Yes"* is the first level.
+
+Make sure you load the `tidyverse` and `tidymodels`!
+
+*Remember that you'll need to set a seed at the beginning of the document to reproduce your results.*
+
+Create a recipe for this dataset **identical** to the recipe you used in Homework 3.
+
+### Question 1
+
+Split the data, stratifying on the outcome variable, `survived.`  You should choose the proportions to split the data into. Verify that the training and testing data sets have the appropriate number of observations. 
+
+### Answer 1
+
+```{r }
+set.seed(3435)
+library(dplyr)
+library(tidymodels)
+library(discrim)
+library(poissonreg)
+library(tune)
+tidymodels_prefer()
+titanic <- read.csv("titanic.csv", header=TRUE)
+
+titanic$pclass <- as.factor(titanic$pclass)
+titanic$survived <- as.factor(titanic$survived)
+titanic$sex <- as.factor(titanic$sex)
+
+titanic <- titanic %>%  mutate(survived=relevel(survived,ref="Yes"))
+#titanic$pclass <- as.numeric(titanic$pclass)
+#titanic$survived <- as.numeric(titanic$survived)
+titanic$sex <- as.numeric(titanic$sex)
+
+
+
+titanic_split <- initial_split(titanic, prop = 0.80,
+                                strata = survived)
+titanic_train <- training(titanic_split)
+titanic_test <- testing(titanic_split)
+titanic_split
+dim(titanic_train)
+dim(titanic_test)
+
+```
+
+
+### Question 2
+
+Fold the **training** data. Use *k*-fold cross-validation, with $k = 10$.
+
+###Answer 2
+```{r }
+
+Auto_folds <- vfold_cv(titanic_train, v = 10)
+Auto_folds
+
+degree_grid <- grid_regular(degree(range = c(1, 10)), levels = 10)
+degree_grid
+
+
+```
+
+### Question 3
+
+In your own words, explain what we are doing in Question 2. What is *k*-fold cross-validation? Why should we use it, rather than simply fitting and testing models on the entire training set? If we **did** use the entire training set, what resampling method would that be?
+
+### Answer 3
+We are dividing training data into 10-folds, roughly equal size. We hold out one set to fit the model on all the sets. 
+If we are using k folds then We leave out part k, fit the model to the other K ??? 1 parts (combined), and then obtain predictions for the left-out kth part.
+This method ensure that every observation from the original dataset has the chance of appearing in training and test set. 
+
+
+### Question 4
+
+Set up workflows for 3 models:
+1. A logistic regression with the `glm` engine;
+2. A linear discriminant analysis with the `MASS` engine;3. A quadratic discriminant analysis with the `MASS` engine.
+
+How many models, total, across all folds, will you be fitting to the data? To answer, think about how many folds there are, and how many models you'll fit to each fold.
+
+###Answer 4
+3 models with 10 folds across each model selected so total will be 30.
+```{r }
+
+##Tuned data recipe
+poly_tuned_rec <-  recipe(survived ~ pclass + sex + age + sib_sp + parch + fare, data = titanic_train)%>%
+  step_poly(fare, degree = tune())
+
+##Logisitic regression
+
+log_mod <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+
+poly_log_wkflow <- workflow() %>%
+  add_model(log_mod) %>%
+  add_recipe(poly_tuned_rec)
+
+##linear discriminant analysis
+lda_mod <- discrim_linear() %>% 
+  set_mode("classification") %>% 
+  set_engine("MASS")
+
+poly_lda_wkflow <- workflow() %>% 
+  add_model(lda_mod) %>% 
+  add_recipe(poly_tuned_rec)
+
+
+##quadratic discriminant analysis
+qda_mod <- discrim_quad() %>% 
+  set_mode("classification") %>% 
+  set_engine("MASS")
+
+poly_qda_wkflow <- workflow() %>% 
+  add_model(qda_mod) %>% 
+  add_recipe(poly_tuned_rec)
+
+```
+
+
+```{r }
+Auto_folds <- vfold_cv(titanic_train, v = 10)
+Auto_folds
+
+degree_grid <- grid_regular(degree(range = c(1, 10)), levels = 10)
+degree_grid
+
+```
+
+### Question 5
+Fit each of the models created in Question 4 to the folded data.
+###Answer 5
+
+```{r }
+
+tune_res_log <- tune_grid(
+  object = poly_log_wkflow, 
+  resamples = Auto_folds, 
+  grid = degree_grid,
+  control = control_grid(verbose = TRUE)
+
+)
+
+autoplot(tune_res_log)
+```
+
+
+```{r }
+tune_res_lda<- tune_grid(
+  object = poly_lda_wkflow, 
+  resamples = Auto_folds, 
+  grid = degree_grid,
+  control = control_grid(verbose = TRUE)
+
+)
+
+autoplot(tune_res_lda)
+
+```
+
+```{r }
+tune_res_qda<- tune_grid(
+  object = poly_qda_wkflow, 
+  resamples = Auto_folds, 
+  grid = degree_grid,
+  control = control_grid(verbose = TRUE)
+
+)
+
+
+autoplot(tune_res_qda)
+```
+
+
+### Question 6
+Use `collect_metrics()` to print the mean and standard errors of the performance metric *accuracy* across all folds for each of the four models.
+
+Decide which of the 3 fitted models has performed the best. Explain why. *(Note: You should consider both the mean accuracy and its standard error.)*
+
+
+```{r }
+collect_metrics(tune_res_log)
+show_best(tune_res_log, metric = "accuracy" , "roc_auc")
+best_degree_log <-select_by_one_std_err(tune_res_log, degree, metric = "accuracy")
+best_degree_log
+```
+```{r }
+collect_metrics(tune_res_lda)
+show_best(tune_res_lda, metric = "accuracy" , "roc_auc")
+best_degree_lda<-select_by_one_std_err(tune_res_lda, degree, metric = "accuracy")
+best_degree_lda
+
+```
+```{r }
+
+collect_metrics(tune_res_qda)
+show_best(tune_res_qda, metric = "accuracy" , "roc_auc")
+best_degree_qda<-select_by_one_std_err(tune_res_qda, degree, metric = "accuracy")
+best_degree_qda
+```
+```{r }
+
+accuracies <- c(best_degree_log$.best, best_degree_lda$.best, 
+                best_degree_qda$.best)
+models <- c("Logistic Regression", "LDA", "QDA")
+results <- tibble(accuracies = accuracies, models = models)
+results %>% 
+  arrange(-accuracies)
+
+
+```
+
+### Question 7
+
+Now that you have chosen a model, fit your chosen model to the entire training dataset (not to the folds).
+
+### Answer 7
+```{r }
+final_wf <- finalize_workflow(poly_log_wkflow, best_degree_log)
+final_wf
+final_fit <- fit(final_wf, titanic_train)
+final_fit
+```
+
+
+### Question 8
+
+Finally, with your fitted model, use `predict()`, `bind_cols()`, and `accuracy()` to assess your model's performance on the testing data!
+
+Compare your model's testing accuracy to its average accuracy across folds. Describe what you see.
+
+### Answer 8
+Final fitted model accuracy is very close to the average accuracy across folds.
+
+```{r }
+
+final_accu <- predict(final_fit, new_data = titanic_test, type = "class") %>% 
+  bind_cols(titanic_test) %>% 
+  accuracy(truth = survived, estimate = .pred_class)
+final_accu
+
+
+```
