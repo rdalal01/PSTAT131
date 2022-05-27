@@ -377,24 +377,27 @@ Which classes was your model most accurate at predicting? Which was it worst at?
 
 ```{r }
 
+
 tree_test_fit <- fit(class_tree_final, data = filterdf_train)
 rf_tree_final_fit <- fit(rf_tree_final, data = filterdf_train)
 xgb_tree_final_fit <- fit(xgb_tree_final, data = filterdf_train)
 
-p1<-augment(tree_test_fit, new_data = filterdf_train) %>%
-  accuracy(truth =  type_1, estimate = .pred_class)
+
+p1 <- augment(tree_test_fit, new_data = filterdf_train) %>% 
+  select(type_1, starts_with(".pred")) %>% 
+  roc_auc(type_1, .pred_Bug:.pred_Water)
 
 p2<-augment(rf_tree_final_fit, new_data = filterdf_train) %>%
-  accuracy(truth =  type_1, estimate = .pred_class)
-
+    select(type_1, starts_with(".pred"))%>% 
+    roc_auc(type_1, .pred_Bug:.pred_Water)
 
 p3<-augment(xgb_tree_final_fit, new_data = filterdf_train) %>%
-  accuracy(truth =  type_1, estimate = .pred_class)
-
+  select(type_1, starts_with(".pred")) %>% 
+  roc_auc(type_1, .pred_Bug:.pred_Water)
 
 accuracies <- c(p1$.estimate,p2$.estimate,p3$.estimate)
 models <- c("Decision Tree", "Random Forrest", "BoostedTree")
-results <- tibble(accuracies = accuracies, models = models)
+results <- tibble(roc = accuracies, models = models)
 results %>% 
   arrange(-accuracies)
 
@@ -412,52 +415,23 @@ final_fit <- finalize_workflow(
 )
 
 final_fit <- fit(final_fit, data = filterdf_test)
-test_fit<-augment(final_fit, new_data = filterdf_test)
-test_auc<-augment(final_fit, new_data = filterdf_test) %>%
-  accuracy(truth =  type_1, estimate = .pred_class)
 
-test_auc
-```
+predicted_data <- augment(final_fit, new_data = filterdf_test) %>% 
+  select(type_1, starts_with(".pred"))
 
-```{r }
-library(pROC)
-test_fit<-augment(final_fit, new_data = filterdf_test) %>%
-    
-    mutate(
-        Grasss_true = ifelse(filterdf_test$type_1== "Grass", 1, 0),
-        Fire_true = ifelse(filterdf_test$type_1== "Fire", 1, 0),
-        Normal_true = ifelse(filterdf_test$type_1== "Normal", 1, 0),
-        Psychic_true = ifelse(filterdf_test$type_1== "Psychic", 1, 0),
-        Water_true = ifelse(filterdf_test$type_1== "Water", 1, 0),
-        Bug_true = ifelse(filterdf_test$type_1== "Bug", 1, 0)
+predicted_data %>% roc_auc(type_1, .pred_Bug:.pred_Water)
 
-    )
-
-roc_plot <- plot(roc(test_fit$Grasss_true,test_fit$.pred_Grass), print.auc=TRUE, col = "green")
-roc_plot <- plot(roc(test_fit$Bug_true,test_fit$.pred_Bug), print.auc = TRUE, 
-                 col = "red", print.auc.y = .1, add = TRUE)
-roc_plot <- plot(roc(test_fit$Water_true,test_fit$.pred_Water), print.auc = TRUE, 
-                 col = "blue", print.auc.y = .2, add = TRUE)
-roc_plot <- plot(roc(test_fit$Psychic_true,test_fit$.pred_Psychic), print.auc = TRUE, 
-                 col = "darkred", print.auc.y = .3, add = TRUE)
-roc_plot <- plot(roc(test_fit$Fire_true,test_fit$.pred_Fire), print.auc = TRUE, 
-                 col = "orange", print.auc.y = .4, add = TRUE)
-roc_plot <- plot(roc(test_fit$Normal_true,test_fit$.pred_Normal), print.auc = TRUE, 
-                 col = "darkgreen", print.auc.y = .6, add = TRUE)
-    
-    plot_colors <- c("green","red","blue","darkred", "orange", "darkgreen" )
-    legend(x = "topright",inset = 0,
-       legend = c("Grass", "Bug", "Water", "Psychic", "Fire", "Normal"), 
-       col=plot_colors, lwd=.6, cex=.6, horiz = FALSE)
-    title(main = "ROC-All Classes")
-
+predicted_data %>% roc_curve(type_1, .pred_Bug:.pred_Water) %>% 
+  autoplot()
 
 
 
 ```
 
+
+
 ```{r }
-test_fit%>%
+predicted_data%>%
    conf_mat(truth = type_1, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 
