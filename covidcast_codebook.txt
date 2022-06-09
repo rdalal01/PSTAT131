@@ -1,0 +1,16 @@
+Name /  Description
+-----------------------------
+
+
+Cases/ number of daily new Covid cases for all the counties in  California
+
+visits/ daily percentages of doctor visits that are related to Covid in California
+
+admits/daily hospital admissions for covid diagnosed that are related to Covid in California 
+
+chngVisits/percentage of outpatient doctor visits primarily about COVID-related symptoms in California.
+
+covidChngVisits/percentage of outpatient doctor visits with confirmed COVID-19, based on Change Healthcare claims data in California
+
+gsymptoms/Sum of Google search volume for anosmia and ageusia related searches in California
+

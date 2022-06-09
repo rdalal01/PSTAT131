@@ -1,0 +1,546 @@
+---
+title: "Final Project- Data Demo"
+author: "Rohan Dalal-PSTAT 131"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+#Covid Forecasting using historical data
+
+##Introduction:
+The Covid 19 Pandemic has dramatically affected day to day life. Due to the nature of the pandemic, policies have been implemented statewide to curb virus spread.
+Successfully forecasting short-term future Covid 19 cases can aid in implementing policies to reduce infection spread.
+Goal of this project is to use data from counties throughout California from May-July of 2020 and run it through various machine learning forecasting models. 
+
+##Data source
+The covidcast R package, which provides access to the COVIDcast Epidata API published by the Delphi group at Carnegie Mellon University. According to the covidcast R package website,This API provides daily access to a range of COVID-related signals Delphi that builds and maintains, from sources like symptom surveys and medical claims data, and also standard signals that we simply mirror, like confirmed cases and deaths.
+([see website here](https://cmu-delphi.github.io/delphi-epidata/api/covidcast_signals.html)) Here is a list of the signals, we can see all the documentation for each one.  This includes information about when the first data points were collected, if the data is available on a daily, or weekly basis, what regions we can call the signal for, and so on.
+
+## Data overview: Fetching/Merging/Prepping data
+
+I plan to choose five signals to predict cases across California counties. 
+ Predictor : "visits","admits", "chngVisits" ,"covidChngVisits","gsymptoms" 
+and Outcome : "Cases"
+
+- "Cases": Get the number of daily new Covid cases for all the counties in  California,for a given date range (example :from May 2020 to July 2020) by fetching the "US Facts Cases and Deaths" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/usa-facts.html). This will be the Ground Truth(label)
+
+- "visits": Get the daily percentages of doctor visits that are related to Covid in California for a given date range (example :from May 2020 to July 2020)  by fetching the "Doctor Visits" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/doctor-visits.html).
+
+- "admits" :Get the daily hospital admissions for covid diagnosed that are related to Covid in California for a given date range (example :from May 2020 to July 2020)  by fetching the "Doctor Visits" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/hospital-admissions.html).
+
+- "chngVisits": Get the Estimated percentage of outpatient doctor visits primarily about COVID-related symptoms in California for a given date range (example :from May 2020 to July 2020)  by fetching the "Doctor Visits" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/chng.html).
+
+- "covidChngVisits": Get the Estimated percentage of outpatient doctor visits with confirmed COVID-19, based on Change Healthcare claims data in California for a given date range (example :from May 2020 to July 2020)  by fetching the "Doctor Visits" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/chng.html).
+
+- "gsymptoms":Get Sum of Google search volume for anosmia and ageusia related searches in California for a given date range (example :from May 2020 to July 2020)  by fetching the "Doctor Visits" data source (https://cmu-delphi.github.io/delphi-epidata/api/covidcast-signals/google-symptoms.html).
+
+##Data PreProcessing
+- Get the required signals and merge data to create a csv file, clean up and tidy data.
+- Observation Count: After collecting needed predictors from the data sources contains about 5428 observations, not all the predictors have missing value but some do.
+- Analyze the data fetched for datatype and null/missing values
+-- Dealing with missing/NA data :
+Method:1-dropping rows with missing values-disadvantage is smaller data set for modeling
+Method:2-imputation method-disadvantage it might limit the effectiveness of the model
+
+I am planning to do exploratory analysis to see accuracy and effectivenes compariosn by both methods.
+
+
+## Motivation/Goal
+Goal is to:
+-to build predictive models that forecast the future of the pandemic so that we can see one step ahead and prepare accordingly using the past data. 
+-to build a predictive model that uses historical COVID cases and related data to forecast the short-term future number of COVID cases in a particular region.
+
+##Project Timeline
+
+-  April 8 -April 14: Load and tidy data 
+-  April 14 -April 24: Exploratory analysis and Model selection
+-  April 24- May 10: Test and Run models
+-  May 10 -May 24 ; work on draft paper
+-  May-25 - June 2 : Any edits and finalize paper
+
+##Data collection efforts using covidcast package.
+
+```{r }
+#install.packages('covidcast')
+library(covidcast)
+library(ggplot2)
+# Cumulative COVID cases per 100k people on 2020-12-31
+df <- covidcast_signal(data_source = "usa-facts", 
+                   signal = "confirmed_cumulative_prop",
+                   start_day = "2020-12-31", end_day = "2020-12-31")
+summary(df)
+
+
+# This looks at the people who reported COVID-like symptoms from their fb-survey
+# from dates 5-1-2020 to 5-7-2020 in all counties 
+data <- covidcast_signal("fb-survey", "smoothed_cli", start_day = "2020-05-01",
+                         end_day = "2020-05-07")
+head(data)
+
+
+```
+
+```{r }
+
+# Get list of all counties in california state and store in ca_counties
+county_code<-c('06000', '06001', '06003', '06005', '06007',
+ '06009', '06011', '06013', '06015', '06017',
+ '06019', '06021', '06023', '06025', '06027',
+ '06029', '06031', '06033', '06035', '06037',
+ '06039', '06041', '06043', '06045', '06047',
+ '06049', '06051', '06053', '06055', '06057',
+ '06059', '06061', '06063', '06065', '06067',
+ '06069', '06071', '06073', '06075', '06077',
+ '06079', '06081', '06083', '06085', '06087',
+ '06089', '06091', '06093', '06095', '06097',
+ '06099', '06101', '06103', '06105', '06107',
+ '06109', '06111', '06113', '06115')
+ca_counties <- county_fips_to_name(county_code)
+
+```
+
+```{r }
+#hospital admissions for covid diagnosed in time span defined for all counties in california state
+admits <- covidcast_signal(data_source ="hospital-admissions", "smoothed_adj_covid19_from_claims",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31", time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(admits)    
+
+```
+
+```{r }
+#Doctor visits primarily about COVID-related symptom in time span defined for all counties in california state
+visits <- covidcast_signal(data_source ="doctor-visits", "smoothed_cli",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31", time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(visits)    
+
+
+#county_fips_to_name(visits$geo_value)
+```
+```{r }
+#Doctor visits primarily about COVID-related symptom from Change Healthcare data
+chngVisits <- covidcast_signal(data_source ="chng", "smoothed_adj_outpatient_cli",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31",time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(chngVisits)    
+
+```
+
+```{r }
+#Doctor visits primarily about COVID symptom from Change Healthcare data
+covidChngVisits<- covidcast_signal(data_source ="chng", "smoothed_adj_outpatient_covid",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31",time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(covidChngVisits)    
+
+```
+
+```{r }
+# Sum of Google search volume for anosmia and ageusia related searches
+gsymptoms <- covidcast_signal(data_source ="google-symptoms", "sum_anosmia_ageusia_smoothed_search",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31",time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(gsymptoms)    
+
+```
+```{r }
+#Number of new confirmed COVID-19 cases, daily for Ground Truth(label)
+cases <- covidcast_signal(data_source ="indicator-combination", "confirmed_incidence_num",
+                        start_day = "2020-05-01",
+                         end_day = "2020-07-31",time_type = "day",
+                          geo_type="county", geo_values=county_code)
+  
+head(cases)    
+
+```
+
+
+```{r }
+# Merge all the signals fetched above (5 feature +one label)
+data <-aggregate_signals( list(visits, admits, chngVisits, covidChngVisits,gsymptoms,cases))
+
+head(data)
+
+```
+
+```{r }
+#Fetch only needed data, rename to sensible column headers
+library(dplyr)
+#names(data)
+library(janitor)
+data<-data%>% clean_names()
+
+#names(data)
+df =data%>% rename(
+            visits= value_0_doctor_visits_smoothed_cli,
+            admits = value_0_hospital_admissions_smoothed_adj_covid19_from_claims,
+            chngVisits =value_0_chng_smoothed_adj_outpatient_cli ,     
+            covidChngVisits =value_0_chng_smoothed_adj_outpatient_covid ,  
+            gsymptoms = value_0_google_symptoms_sum_anosmia_ageusia_smoothed_search , 
+            cases = value_0_indicator_combination_confirmed_incidence_num
+            )
+
+
+head(df)
+```
+
+```{r }
+#Analyze the data fetched for datatype and null/missing values
+dim(df)
+colSums(is.na(df))
+```
+#Data cleaning 
+```{r }
+#Preprocessing Method:1-dropping rows with missing values-disadvantage is smaller data set for modeling
+
+newdf<-na.omit(df)
+dim(newdf)
+colSums(is.na(newdf))
+# Write filtered data into a new file.
+write.csv(newdf,"completedata.csv")
+
+#completedata.csv is ready to be used for modeling
+```
+#Data imputation
+```{r }
+#Preprocessing Method:2-imputation method-disadvantage it might limit the effectiveness of your model
+#clean data for missing values by imputation method(replace missing with mode values)
+newdf1 <- df
+# Return the column names containing missing observations
+list_na <- colnames(newdf1)[ apply(newdf1, 2, anyNA) ]
+# Create mean
+average_missing <- apply(newdf1[,colnames(newdf1) %in% list_na],
+      2,
+      mean,
+      na.rm =  TRUE)
+average_missing
+
+# Create a new variable with the mean and median
+newdf1_replace <- newdf1 %>%
+   mutate(visits  = ifelse(is.na(visits), average_missing[1], visits),
+          admits = ifelse(is.na(admits), average_missing[2], admits),
+          chngVisits = ifelse(is.na(chngVisits), average_missing[3], chngVisits),
+          covidChngVisits = ifelse(is.na(covidChngVisits), average_missing[4], covidChngVisits),
+          gsymptoms = ifelse(is.na(gsymptoms), average_missing[5], gsymptoms)
+          )
+colSums(is.na(newdf1_replace))
+write.csv(newdf1_replace,"imputeddata.csv")
+#imputeddata.csv is ready to be used for modeling
+
+```
+In  data gathering process, I started data analysis and found lots of missing values for google trends signals and many counties
+did not have sufficient data to consider hence generated 2 different datasets "imputeddata.csv" (newdf1) and "completedata.csv"(newdf) to test different approaches.
+
+Data Imputation : In generated "completedata.csv"(newdf), chose to drop all observations that have missing values. 
+Upon inspection, over three thousand of the 5428 entries had one or more missing fields. Removing all the data with missing value leads to a
+disadvantage to having a smaller data set for modeling. We end up with 1030 datapoints in our clean data. 
+
+In second set "imputeddata.csv" I imputed by replacing the mode values, generated data was a larger set but disadvantage is going to be limiting
+the effectiveness of the model.Finally, we decided it would be best to keep the data true versus embedding values like
+the mean/median for so many entries and look for models that performed well despite having less data. Choice was to run models against "completedata.csv" with 1030 data points.
+
+
+#Exploratory Data Analysis
+This entire data analysis will be based only on the data set that excludes missing value so our modelling is effective where all the variables are represented.
+First we will try to find the county that has maximum covid cases documented with the time interval chosen for the test. 
+
+```{r }
+
+newdf %>% 
+group_by(geo_value , time_value) %>%
+ggplot(aes(x = time_value, y = cases, colour=factor(county_fips_to_name(geo_value))))+
+  geom_point() + geom_line()
+
+```
+Above plot clearly shows that Los Angeles county has the heighest cases recorded. 
+We are going to take a close look at the data by filtering on cases count greater than 1000. 
+```{r }
+sorted<-newdf %>%
+  group_by(geo_value , time_value) %>%
+   filter(cases > 1000) %>% 
+   arrange(geo_value) 
+
+
+sorted %>% 
+group_by(geo_value , time_value) %>%
+ggplot(aes(x = time_value, y = cases, colour=factor(county_fips_to_name(geo_value))))+
+  geom_point() + geom_line()
+
+
+
+```
+It is important to see the corelation on number of cases generated to the signals choses to collect the matrix, 
+Drawing a coorplot will give us an idea of strength of the signals that adds value to the data modeling for future forecasting
+```{r }
+library(corrplot)
+library(corrr)
+
+newdf %>% 
+  select(is.numeric) %>% 
+  cor() %>% 
+  corrplot(type = "lower")
+
+
+
+```
+Number if visits and hospital admission are positivly correlated to the number of cases. Anosmia_ageusia google symptoms searches also have a postive corelation to the factor.
+
+## Data Splitting for Cross Validation and Prediction: 
+Firstly, we train the models on
+covid cases collected from different data sources for all counties in CA for a time period:
+May 1, 2020 to -June30, 2020 (training set). We predicted the remaining data from
+July 1-July30. Our metric will be the Root Mean Squared Error (RMSE) computed with
+the predicted and ground-truth time series
+
+```{r }
+library(tidyverse)
+library(tidymodels)
+
+# sort the date first so we can split the data set
+newdf <- newdf %>% 
+group_by(geo_value , time_value) %>%
+   arrange(time_value)
+# after sorting the dataframe, split the dataframe
+split_date <-'2020-06-30'
+filterdf_train <-newdf %>% 
+  filter(time_value <= split_date)
+filterdf_test <-newdf %>% 
+  filter(time_value >split_date)
+tail(filterdf_train)
+
+dim(filterdf_train)
+dim(filterdf_test)
+
+
+ggplot(filterdf_test)+geom_point(aes(x = time_value, y = cases, col = "red")) + 
+  geom_point(data = filterdf_train, aes(x = time_value, y = cases), col = "green")
+  
+
+```
+
+#Model Building
+The training data set has about 577 observations and the testing data set has just under 453 bservations.
+```{r }
+
+filterdf_recipe <- recipe(cases ~ visits+ admits + chngVisits + covidChngVisits+
+                           gsymptoms, filterdf_train) %>% 
+  step_novel(all_nominal_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_normalize(all_predictors())
+
+```
+#Linear Model
+```{r }
+
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(filterdf_recipe)
+
+
+lm_fit <- fit(lm_wflow, filterdf_train)
+
+lm_fit %>% 
+  # This returns the parsnip object:
+  extract_fit_parsnip() %>% 
+  # Now tidy the linear model object:
+  tidy()
+
+
+filtered_train_res <- predict(lm_fit, new_data = filterdf_train %>% select(-cases))
+
+
+filtered_train_res <- bind_cols(filtered_train_res,filterdf_train )
+filtered_train_res %>% 
+  head()
+```
+```{r }
+
+filtered_train_res %>% 
+  ggplot(aes(x = .pred, y = cases)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(lty = 2) + 
+  theme_bw() +
+  coord_obs_pred()
+
+rmse(filtered_train_res, truth = cases, estimate = .pred)
+```
+#Random Forrest Model
+```{r }
+rf_model <- 
+  rand_forest(
+              min_n = tune(),
+              mtry = tune(),
+              mode = "regression") %>% 
+  set_engine("ranger")
+
+rf_workflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(filterdf_recipe)
+
+```
+```{r }
+Auto_folds <-  vfold_cv(filterdf_train, strata = cases, v = 5)
+rf_params <- parameters(rf_model) %>% 
+  update(mtry = mtry(range= c(2, 150)))
+
+# define grid
+rf_grid <- grid_regular(rf_params, levels = 2)
+
+rf_tune <- rf_workflow %>% 
+  tune_grid(
+    resamples = Auto_folds, 
+    # how does it complete the models in those workflows
+    grid = rf_grid)
+autoplot(rf_tune, metric = "rmse")
+# Write Out Results & Workflow ----
+#save(rf_tune, rf_workflow, file = "data/model_fitting/rf_tune.rda")
+
+
+```
+Taking a quick peak at the autoplot() function, it is clear that rmse increasing as the number of randomly selected predictors increases. 
+```{r }
+
+show_best(rf_tune, metric = "rmse") %>% select(-.estimator, -.config)
+
+```
+
+#Boost Tree Model
+```{r }
+
+bt_model <- boost_tree(mode = "regression",
+                       min_n = tune(),
+                       mtry = tune(),
+                       learn_rate = tune()) %>% 
+  set_engine("xgboost")
+
+bt_workflow <- workflow() %>% 
+  add_model(bt_model) %>% 
+  add_recipe(filterdf_recipe)
+
+
+```
+
+```{r }
+bt_params <- parameters(bt_model) %>% 
+  update(mtry = mtry(range= c(2, 105)),
+         learn_rate = learn_rate(range = c(-5, 0.2))
+  )
+
+# define grid
+bt_grid <- grid_regular(bt_params, levels = 2)
+  
+
+```
+
+```{r }
+bt_tune <- bt_workflow %>% 
+  tune_grid(
+    resamples = Auto_folds, 
+    grid = bt_grid
+    )
+autoplot(bt_tune, metric = "rmse")
+
+
+```
+
+```{r }
+show_best(bt_tune, metric = "rmse") %>% select(-.estimator, -.config)
+
+
+```
+
+
+#Final Model Building
+
+
+We'll create a workflow that has tuned in the name, so we can identify it. We'll finalize the workflow by taking the parameters from the best model (the random forest model) using the select_best() function.
+
+##Analysis of The Test Set:  
+lets fit the model to the testing data set and create a few stored data sets for some analysis!
+
+```{r }
+rf_workflow_tuned <- rf_workflow %>% 
+  finalize_workflow(select_best(rf_tune, metric = "rmse"))
+
+rf_results <- fit(rf_workflow_tuned, filterdf_train)
+
+final_metric <- metric_set(rmse)
+
+model_test_predictions <- predict(rf_results, new_data = filterdf_test) %>% 
+  bind_cols(filterdf_test %>% select(cases)) 
+
+model_test_predictions_type <- predict(rf_results, new_data = filterdf_test) %>% 
+  bind_cols(filterdf_test %>% select(cases, geo_value, time_value)) 
+
+model_test_predictions %>% 
+  final_metric(truth = cases, estimate = .pred)
+
+
+
+
+```
+Our model returned an rmse of 820 on our testing data, which is higher than rmse on the training data. This means my model did  overfitting to the training data. 
+
+```{r }
+
+model_test_predictions %>% 
+group_by(geo_value , time_value) %>%
+ggplot(aes(x = time_value, y = .pred, colour=factor(county_fips_to_name(geo_value))))+
+  geom_point() + geom_line()
+
+
+```
+
+#Forecasting the timeseries approaches
+There are many available forecasting statistics model in forecast package that can be used to predict the future days of covid predictions. 
+Below is the test resaults for next 20days of prediction using the simple exponential smoothing model. 
+
+```{r }
+
+dat_train<-filterdf_train
+dat_test<-filterdf_test
+
+library(TSstudio)
+library(forecast)
+
+nrow(dat_train); nrow(dat_test)
+dat_ts <- ts(dat_train[, 8], start = c(5,1), end = c(6,30), frequency = 30)
+plot.ts(dat_ts)
+ts_info(dat_ts)
+#lines 2 to 4
+se_model <-  ses(dat_ts, h = 20)
+summary(se_model)
+
+
+
+```
+SE model results in RMSE=281 very close to actual training data set., Below plot shows the next 20 days of covid prediction for the cases in state of california.
+```{r }
+autoplot(se_model)
+
+
+```
